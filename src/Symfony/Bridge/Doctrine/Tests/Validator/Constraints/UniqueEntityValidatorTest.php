@@ -44,9 +44,11 @@ use Symfony\Bridge\Doctrine\Tests\Fixtures\Type\StringWrapperType;
 use Symfony\Bridge\Doctrine\Tests\Fixtures\UpdateCompositeIntIdEntity;
 use Symfony\Bridge\Doctrine\Tests\Fixtures\UpdateCompositeObjectNoToStringIdEntity;
 use Symfony\Bridge\Doctrine\Tests\Fixtures\UpdateEmployeeProfile;
+use Symfony\Bridge\Doctrine\Tests\Fixtures\UserUuidName;
 use Symfony\Bridge\Doctrine\Tests\TestRepositoryFactory;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntityValidator;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Exception\ConstraintDefinitionException;
 use Symfony\Component\Validator\Exception\UnexpectedValueException;
 use Symfony\Component\Validator\Test\ConstraintValidatorTestCase;
@@ -160,6 +162,7 @@ class UniqueEntityValidatorTest extends ConstraintValidatorTestCase
             $em->getClassMetadata(Employee::class),
             $em->getClassMetadata(CompositeObjectNoToStringIdEntity::class),
             $em->getClassMetadata(SingleIntIdStringWrapperNameEntity::class),
+            $em->getClassMetadata(UserUuidName::class),
         ]);
     }
 
@@ -1488,5 +1491,43 @@ class UniqueEntityValidatorTest extends ConstraintValidatorTestCase
         $dto = new HireAnEmployee('Foo');
 
         $this->validator->validate($dto, $constraint);
+    }
+
+    public function testIdentifierFieldNamesObject()
+    {
+        $entity1 = new UserUuidName();
+        $entity1->id = Uuid::v7();
+        $entity1->name = 'Foo';
+        $entity2 = new UserUuidName();
+        $entity2->id = Uuid::v6();
+        $entity2->name = 'Foo';
+
+        $constraint = new UniqueEntity(
+            message: 'myMessage',
+            fields: ['name'],
+            entityClass: UserUuidName::class,
+            identifierFieldNames: ['id'],
+            em: self::EM_NAME,
+        );
+        $this->validator->validate($entity1, $constraint);
+
+        $this->assertNoViolation();
+
+        $this->em->persist($entity1);
+        $this->em->flush();
+
+        $this->validator->validate($entity1, $constraint);
+
+        $this->assertNoViolation();
+
+        $this->validator->validate($entity2, $constraint);
+
+        $this->buildViolation('myMessage')
+            ->atPath('property.path.name')
+            ->setParameter('{{ value }}', '"Foo"')
+            ->setInvalidValue('Foo')
+            ->setCause([$entity1])
+            ->setCode(UniqueEntity::NOT_UNIQUE_ERROR)
+            ->assertRaised();
     }
 }
